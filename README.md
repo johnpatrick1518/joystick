@@ -21,13 +21,14 @@ from its own Wi-Fi access point—no phone app, router or internet connection ne
 3. Select your actual wiring in **`config.h`**:
 
    ```cpp
-   #define KENNY_WIRING KENNY_DIRECT_GPIO       // Default: earlier direct wiring
+   #define KENNY_WIRING KENNY_DIRECT_GPIO       // Default: breadboard/direct wiring
    // Or replace that line with:
    #define KENNY_WIRING KENNY_CARRIER_MCP23017  // Carrier PCB, expander directions
    ```
 
-   Choose only one. Direct mode uses E-stop **GPIO15**; carrier mode uses
-   **GPIO18**. Their motor-direction connections differ.
+   Choose only one. Direct mode defaults to **breadboard operation**: GPIO15
+   can remain unconnected and encoders are optional. Carrier mode enables
+   E-stop **GPIO18** and encoder feedback. Their direction connections differ.
 4. Upload initially with motor power disconnected. Serial Monitor at **115200**
    shows the selected wiring and network address.
 5. On your phone, join **KENNY-Robot**, password **KennyDrive!2026**, then open
@@ -64,6 +65,27 @@ Preview below uses simulated telemetry:
 ![Minimal Master Control view](docs/master-control-preview.png)
 
 ## Wiring and setup
+
+### Breadboard only (default)
+
+Upload the default configuration, join **KENNY-Robot**, and open
+**http://192.168.4.1/#master**. Hold/drag the joystick to command the GPIO
+outputs; release stops/disarms. Nothing needs to be connected to **GPIO15**.
+Unused encoder inputs are ignored, so floating breadboard pins cannot cause
+encoder faults. The page labels E-stop/encoder feedback as disabled and shows
+actual commanded PWM rather than simulated RPM. A breadboard alone cannot
+move motors; motor movement requires the driver, power and motor connections
+in the wiring guide. Breadboard rows must not short GPIO outputs together.
+
+To use connected encoders and an E-stop contact, add these lines in `config.h`:
+
+```cpp
+#define KENNY_ESTOP_ENABLED 1
+#define KENNY_ENCODERS_ENABLED 1
+```
+
+Place them before the corresponding `#ifndef` defaults. Enable each input only
+when it is wired; GPIO15's enabled E-stop contact must close to GND to arm.
 
 - [Full setup, direct wiring, calibration and troubleshooting](docs/ESP32_MOBILE_CONTROLLER.md)
 - [Carrier terminal blocks and MCP23017 mapping](docs/CARRIER_WIRING.md)

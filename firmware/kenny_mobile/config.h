@@ -14,6 +14,20 @@
 #error "Select KENNY_DIRECT_GPIO or KENNY_CARRIER_MCP23017"
 #endif
 
+// Direct GPIO defaults to a breadboard with no E-stop contact or encoders.
+// Set these to 1 after connecting the corresponding hardware.
+// Carrier wiring defaults to both inputs enabled.
+#ifndef KENNY_ESTOP_ENABLED
+#define KENNY_ESTOP_ENABLED (KENNY_WIRING == KENNY_CARRIER_MCP23017)
+#endif
+#ifndef KENNY_ENCODERS_ENABLED
+#define KENNY_ENCODERS_ENABLED (KENNY_WIRING == KENNY_CARRIER_MCP23017)
+#endif
+#if (KENNY_ESTOP_ENABLED != 0 && KENNY_ESTOP_ENABLED != 1) || \
+    (KENNY_ENCODERS_ENABLED != 0 && KENNY_ENCODERS_ENABLED != 1)
+#error "E-stop and encoder settings must be 0 or 1"
+#endif
+
 constexpr char WIFI_SSID[] = "KENNY-Robot";
 constexpr char WIFI_PASSWORD[] = "KennyDrive!2026";  // Default local Wi-Fi password.
 static_assert(sizeof(WIFI_PASSWORD) >= 9, "Wi-Fi password must have at least 8 characters");

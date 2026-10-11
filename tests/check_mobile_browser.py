@@ -274,6 +274,25 @@ def main():
             page.mouse.click(box['x']+box['width']/2, box['y']+box['height']/2)
             page.wait_for_timeout(100)
             assert not any(path == 'arm' for path, _ in requests[start:])
+            # Bare breadboard: absent E-stop/encoder hardware still permits driving.
+            state.update(estop=False, faults=0, wiring='Direct GPIO', estopPin=15,
+                         estopEnabled=False, encodersEnabled=False, cpr=0)
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+            page.mouse.move(box['x']+box['width']/2, box['y']+box['height']/2)
+            page.mouse.down()
+            page.mouse.move(box['x']+box['width']/2, box['y']+box['height']/2-80)
+            page.wait_for_function("document.getElementById('mode').textContent === 'DRIVING'")
+            page.wait_for_timeout(130)
+            assert state['armed'] and state['v'] > 0
+            page.mouse.up()
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+            assert not state['armed'] and state['v'] == 0
+            page.evaluate("location.hash = ''")
+            page.wait_for_function("!document.getElementById('arm').disabled")
+            assert page.locator('#estop').inner_text() == 'Disabled'
+            assert 'Open-loop breadboard' in page.locator('#feedback').inner_text()
+            assert page.locator('#cpr').inner_text() == 'Disabled'
+            assert page.locator('#wheels tr').first.locator('td').nth(1).inner_text() == '—'
             assert not errors, errors
             browser.close()
             if args.refresh_previews:

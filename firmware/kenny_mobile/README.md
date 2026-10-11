@@ -5,9 +5,15 @@ it. Arduino IDE board: **ESP32 Dev Module**, Espressif core **3.3.12**.
 
 Select the actual wiring in config.h before upload:
 
-- **KENNY_DIRECT_GPIO** (default): earlier independent L298N GPIO connections;
-  E-stop GPIO15.
+- **KENNY_DIRECT_GPIO** (default): independent L298N/breadboard GPIO connections;
+  E-stop and encoder inputs disabled, so GPIO15 can remain unconnected.
 - **KENNY_CARRIER_MCP23017**: new carrier PCB; expander directions, E-stop GPIO18.
+
+For wired hardware, set `KENNY_ESTOP_ENABLED` and/or `KENNY_ENCODERS_ENABLED`
+to `1` before their `#ifndef` defaults in config.h. Carrier mode enables both
+by default. Without encoders the controller uses open-loop PWM, not measured
+speed feedback. A breadboard alone lets you test the joystick/GPIO outputs;
+motors require powered drivers and the documented wiring.
 
 Phone Wi-Fi: **KENNY-Robot**, password **KennyDrive!2026**, page
 **http://192.168.4.1/**. Arm, hold/drag, release to zero; STOP disarms. Motors

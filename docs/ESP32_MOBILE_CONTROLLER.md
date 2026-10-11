@@ -20,6 +20,26 @@ The modes have different direction and E-stop connections. The phone page and
 USB startup message identify the selected mode. Do not upload direct mode onto
 the carrier PCB: GPIO16/17/21/22 have different purposes there.
 
+Direct-GPIO mode ships with **E-stop and encoder inputs disabled** for a bare
+breadboard. Leave GPIO15 unconnected: it is not read and cannot block arming.
+Unconnected encoder pins have no interrupts attached and cannot produce faults.
+Hold the joystick at **http://192.168.4.1/#master** to command outputs and release
+to stop. A breadboard does not drive motors by itself; use the connections below
+for motors, and avoid connecting separate GPIO outputs to the same breadboard row.
+
+After wiring an E-stop contact and encoders, add these settings **before their
+`#ifndef` defaults** in `config.h` and upload again:
+
+```cpp
+#define KENNY_ESTOP_ENABLED 1
+#define KENNY_ENCODERS_ENABLED 1
+```
+
+Each setting is independent. Carrier mode defaults to both enabled. With encoders
+disabled, PWM uses the existing target ramp and nominal-RPM feedforward without
+PI feedback or encoder faults. RPM/counts are shown as unavailable, not simulated;
+the speed slider is a command scale, not a measured speed guarantee.
+
 ### Direct-GPIO mode: classic 38-pin ESP32-WROOM
 
 Numbers below are printed **GPIO labels**, not physical header positions.
@@ -38,7 +58,7 @@ GPIO34/35/36/39 have no internal pull-ups; this encoder has output pull-up circu
 - Remove all ENA/ENB jumpers; use **10 kΩ enable-to-GND pull-downs**.
 - Preserve GPIO5's default boot HIGH level with the documented **10 kΩ pull-up
   to 3.3 V**. PWM pull-downs keep motors disabled during reset.
-- E-stop input: **GPIO15 → normally-closed auxiliary contact → GND**. Open=stop.
+- Optional enabled E-stop input: **GPIO15 → normally-closed auxiliary contact → GND**. Open=stop.
   GPIO15 LOW suppresses ROM boot messages on classic ESP32 but permits flash boot.
 - Power motors from their appropriate fused/switched **12 V motor supply**,
   never from the ESP32/Pi. Join ESP32, encoder, driver and supply-return grounds.
@@ -158,7 +178,7 @@ alternative motor-command path.
 - Requested speed **±0.10 m/s**, turn **±0.60 rad/s**; individual wheel speeds
   rescaled together to **±0.15 m/s** while preserving curvature.
 - PWM: **20 kHz**, 8-bit, commissioning cap **90/255**.
-- Four encoder-feedback speed loops at approximately **100 Hz**.
+- Motor updates at approximately **100 Hz**; encoder-feedback speed loops when enabled.
 - Browser commands about every **60 ms**, normally one outstanding drive request.
   In the full interface, release sends a priority zero even if an earlier request
   is still pending. Master Control release sends STOP and disarms instead.

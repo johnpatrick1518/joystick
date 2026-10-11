@@ -177,7 +177,7 @@ void updateMotors(float dt, uint32_t now) {
       continue;
     }
     if (static_cast<uint32_t>(now - motor.directionSince) < 50) continue;
-    if (motor.rpm * direction < -5) {
+    if (KENNY_ENCODERS_ENABLED && motor.rpm * direction < -5) {
       ledcWrite(motor.pwm, 0); motor.duty = 0;
       if (static_cast<uint32_t>(now - motor.directionSince) > 500) {
         control.stop(mobile::ENCODER); allZero(); return;
@@ -186,6 +186,13 @@ void updateMotors(float dt, uint32_t now) {
     }
     motor.rampRpm += constrain(requested - motor.rampRpm, -RPM_SLEW_PER_SECOND * dt, RPM_SLEW_PER_SECOND * dt);
     float desired = fabsf(motor.rampRpm);
+    if (!KENNY_ENCODERS_ENABLED) {
+      // Open-loop breadboard operation: no invented encoder feedback or PI windup.
+      motor.duty = static_cast<int>(constrain(desired * 255 / NOMINAL_RPM,
+                                             0.0f, static_cast<float>(MAX_PWM)));
+      ledcWrite(motor.pwm, motor.duty);
+      continue;
+    }
     float error = desired - motor.rpm * direction;
     float feedforward = desired * 255 / NOMINAL_RPM;
     float candidateI = constrain(motor.integral + error * dt, -100.0f, 100.0f);
@@ -210,7 +217,10 @@ void motorTask(void*) {
   while (true) {
     uint32_t now = millis(), currentUs = micros();
     uint32_t elapsedUs = currentUs - previousUs; previousUs = currentUs;
-    bool estop = digitalRead(ESTOP_PIN) == HIGH;
+    bool estop = false;
+#if KENNY_ESTOP_ENABLED
+    estop = digitalRead(ESTOP_PIN) == HIGH;
+#endif
     control.tick(now, estop);
     bool loopLate = elapsedUs > 100000;
     if (loopLate) control.stop(mobile::TIMING);
@@ -300,11 +310,13 @@ void statusHandler() {
   char body[650];
   snprintf(body, sizeof(body),
     "{\"armed\":%s,\"estop\":%s,\"ready\":%s,\"faults\":%lu,\"boot\":%lu,\"uptime\":%lu,"
-    "\"wiring\":\"%s\",\"estopPin\":%u,\"v\":%.4f,\"w\":%.4f,\"cpr\":%lu,\"maxV\":%.3f,\"maxW\":%.3f,\"watchdog\":%lu,"
+    "\"wiring\":\"%s\",\"estopPin\":%u,\"estopEnabled\":%s,\"encodersEnabled\":%s,\"v\":%.4f,\"w\":%.4f,\"cpr\":%lu,\"maxV\":%.3f,\"maxW\":%.3f,\"watchdog\":%lu,"
     "\"counts\":[%ld,%ld,%ld,%ld],\"rpm\":[%.2f,%.2f,%.2f,%.2f],\"pwm\":[%d,%d,%d,%d]}",
     s.armed?"true":"false", s.estop?"true":"false", s.ready?"true":"false",
     static_cast<unsigned long>(s.faults), static_cast<unsigned long>(bootId), static_cast<unsigned long>(s.uptime),
-    WIRING_NAME, static_cast<unsigned>(ESTOP_PIN), s.linear, s.angular, static_cast<unsigned long>(ENCODER_CPR), mobile::MAX_LINEAR, mobile::MAX_ANGULAR,
+    WIRING_NAME, static_cast<unsigned>(ESTOP_PIN), KENNY_ESTOP_ENABLED?"true":"false",
+    KENNY_ENCODERS_ENABLED?"true":"false", s.linear, s.angular,
+    static_cast<unsigned long>(KENNY_ENCODERS_ENABLED ? ENCODER_CPR : 0), mobile::MAX_LINEAR, mobile::MAX_ANGULAR,
     static_cast<unsigned long>(mobile::WATCHDOG_MS),
     static_cast<long>(s.counts[0]), static_cast<long>(s.counts[1]), static_cast<long>(s.counts[2]), static_cast<long>(s.counts[3]),
     s.rpm[0],s.rpm[1],s.rpm[2],s.rpm[3],s.pwm[0],s.pwm[1],s.pwm[2],s.pwm[3]);
@@ -312,8 +324,11 @@ void statusHandler() {
 }
 
 void setup() {
-  Serial.begin(115200); pinMode(ESTOP_PIN, INPUT_PULLUP);
-  hardwareReady = ENCODER_CPR > 0;
+  Serial.begin(115200);
+#if KENNY_ESTOP_ENABLED
+  pinMode(ESTOP_PIN, INPUT_PULLUP);
+#endif
+  hardwareReady = !KENNY_ENCODERS_ENABLED || ENCODER_CPR > 0;
   for (auto& motor : motors) {
     pinMode(motor.pwm, OUTPUT); digitalWrite(motor.pwm, LOW);
 #if KENNY_WIRING == KENNY_DIRECT_GPIO
@@ -322,10 +337,12 @@ void setup() {
 #endif
     hardwareReady = ledcAttach(motor.pwm, 20000, 8) && hardwareReady;
     ledcWrite(motor.pwm, 0);
+#if KENNY_ENCODERS_ENABLED
     pinMode(motor.encA, INPUT); pinMode(motor.encB, INPUT);
     motor.previousAB = (digitalRead(motor.encA) << 1) | digitalRead(motor.encB);
     attachInterruptArg(motor.encA, encoderInterrupt, &motor, CHANGE);
     attachInterruptArg(motor.encB, encoderInterrupt, &motor, CHANGE);
+#endif
   }
   if (!hardwareReady) control.stop(mobile::PWM_INIT | mobile::CONFIGURATION);
 #if KENNY_WIRING == KENNY_CARRIER_MCP23017
@@ -357,7 +374,10 @@ void setup() {
   server.onNotFound([]() { server.send(404, "text/plain", "Open http://192.168.4.1/"); });
   server.begin();
   Serial.printf("KENNY mobile ready. Wi-Fi: %s | URL: http://%s/ | %s\n",
-                WIFI_SSID, WiFi.softAPIP().toString().c_str(), WIRING_NAME);
+                 WIFI_SSID, WiFi.softAPIP().toString().c_str(), WIRING_NAME);
+  Serial.printf("E-stop input: %s | Encoder feedback: %s\n",
+                KENNY_ESTOP_ENABLED ? "enabled" : "disabled",
+                KENNY_ENCODERS_ENABLED ? "enabled" : "disabled (open-loop)");
 }
 
 void loop() {
