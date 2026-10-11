@@ -300,11 +300,11 @@ void statusHandler() {
   char body[650];
   snprintf(body, sizeof(body),
     "{\"armed\":%s,\"estop\":%s,\"ready\":%s,\"faults\":%lu,\"boot\":%lu,\"uptime\":%lu,"
-    "\"wiring\":\"%s\",\"v\":%.4f,\"w\":%.4f,\"cpr\":%lu,\"maxV\":%.3f,\"maxW\":%.3f,\"watchdog\":%lu,"
+    "\"wiring\":\"%s\",\"estopPin\":%u,\"v\":%.4f,\"w\":%.4f,\"cpr\":%lu,\"maxV\":%.3f,\"maxW\":%.3f,\"watchdog\":%lu,"
     "\"counts\":[%ld,%ld,%ld,%ld],\"rpm\":[%.2f,%.2f,%.2f,%.2f],\"pwm\":[%d,%d,%d,%d]}",
     s.armed?"true":"false", s.estop?"true":"false", s.ready?"true":"false",
     static_cast<unsigned long>(s.faults), static_cast<unsigned long>(bootId), static_cast<unsigned long>(s.uptime),
-    WIRING_NAME, s.linear, s.angular, static_cast<unsigned long>(ENCODER_CPR), mobile::MAX_LINEAR, mobile::MAX_ANGULAR,
+    WIRING_NAME, static_cast<unsigned>(ESTOP_PIN), s.linear, s.angular, static_cast<unsigned long>(ENCODER_CPR), mobile::MAX_LINEAR, mobile::MAX_ANGULAR,
     static_cast<unsigned long>(mobile::WATCHDOG_MS),
     static_cast<long>(s.counts[0]), static_cast<long>(s.counts[1]), static_cast<long>(s.counts[2]), static_cast<long>(s.counts[3]),
     s.rpm[0],s.rpm[1],s.rpm[2],s.rpm[3],s.pwm[0],s.pwm[1],s.pwm[2],s.pwm[3]);

@@ -29,7 +29,7 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     state = dict(armed=False, estop=False, ready=True, faults=0, boot=42, uptime=12000,
-                 wiring="Carrier PCB / MCP23017", v=0, w=0, cpr=1320,
+                 wiring="Carrier PCB / MCP23017", estopPin=18, v=0, w=0, cpr=1320,
                  maxV=0.1, maxW=0.6, watchdog=300, counts=[0]*4, rpm=[0]*4, pwm=[0]*4)
     requests = []
     reject_drive = False
@@ -38,15 +38,24 @@ def main():
     held_route = None
     hold_next_arm = False
     held_arm = None
+    hold_next_stop = False
+    held_stop = None
+    hold_next_status = False
+    held_status = None
+    reject_stop_ack = False
 
     def api(route):
-        nonlocal active_lease, hold_next_drive, held_route, hold_next_arm, held_arm
+        nonlocal active_lease, hold_next_drive, held_route, hold_next_arm, held_arm, hold_next_stop, held_stop, hold_next_status, held_status
         path = route.request.url.split("/api/")[-1]
         body = parse_qs(route.request.post_data or "")
         requests.append((path, body))
         code, result = 200, {"ok": True}
         if path == "status":
             result = state
+            if hold_next_status:
+                hold_next_status = False
+                held_status = (route, json.dumps(state))
+                return
         elif path == "arm":
             if state["armed"] or state["estop"] or not state["ready"]:
                 code, result = 409, {"ok": False, "error": "Controller unavailable"}
@@ -69,6 +78,12 @@ def main():
                     return
         elif path == "stop":
             state["armed"] = False; state["v"] = state["w"] = 0
+            if reject_stop_ack:
+                code, result = 503, {'ok':False, 'error':'Stop acknowledgement unavailable'}
+            if hold_next_stop:
+                hold_next_stop = False
+                held_stop = route
+                return
         route.fulfill(status=code, content_type="application/json", body=json.dumps(result))
 
     try:
@@ -129,6 +144,25 @@ def main():
             assert not state["armed"]
             assert page.locator("#mode").inner_text() == "DISARMED"
 
+            # A pre-STOP armed status arriving late cannot lock the button again.
+            arm()
+            hold_next_status = True
+            page.wait_for_timeout(550)
+            assert held_status is not None
+            page.locator('#stop').click()
+            page.wait_for_timeout(80)
+            assert not page.locator('#arm').is_disabled()
+            held_status[0].fulfill(status=200,content_type='application/json',body=held_status[1])
+            page.wait_for_timeout(100)
+            assert not page.locator('#arm').is_disabled()
+
+            # A failed STOP reply recovers only after fresh disarmed status arrives.
+            reject_stop_ack = True
+            page.locator('#stop').click()
+            page.wait_for_function("!document.getElementById('arm').disabled", timeout=1500)
+            assert not state['armed']
+            reject_stop_ack = False
+
             arm()
             page.evaluate("window.dispatchEvent(new Event('blur'))")
             page.wait_for_timeout(160)
@@ -142,6 +176,12 @@ def main():
             state["estop"] = True; state["faults"] = 2
             page.wait_for_function("document.getElementById('estop').textContent.includes('OPEN')")
             assert page.locator("#arm").is_disabled()
+            assert 'GPIO18' in page.locator('#armReason').inner_text()
+            assert 'OPEN' in page.locator('#armReason').inner_text()
+            page.locator('#stop').click()
+            page.wait_for_timeout(100)
+            assert page.locator('#arm').is_disabled()
+            assert 'E-stop' in page.locator('#message').inner_text()
 
             # Master Control presents exactly the speed control and joystick.
             state['estop'] = False; state['faults'] = 0
@@ -204,12 +244,23 @@ def main():
             page.mouse.move(cx,cy); page.mouse.down(); page.mouse.move(cx,cy-80)
             page.wait_for_function("document.getElementById('mode').textContent === 'DRIVING'")
             page.wait_for_timeout(100)
+            hold_next_stop = True
             page.evaluate("location.hash = ''")
             page.wait_for_function("!document.body.classList.contains('master')")
-            page.wait_for_timeout(120)
+            page.wait_for_timeout(80)
+            assert held_stop is not None
             assert not state['armed'] and state['v'] == 0
             page.mouse.up()
             assert page.locator('.details').is_visible()
+            # STOP during an outstanding view-change STOP must not permanently lock Arm.
+            page.locator('#stop').click()
+            page.wait_for_timeout(80)
+            held_stop.fulfill(status=200, content_type='application/json', body='{"ok":true}')
+            page.wait_for_function("!document.getElementById('arm').disabled", timeout=1500)
+            assert not state['armed']
+            arm()
+            page.locator('#stop').click()
+            page.wait_for_function("!document.getElementById('arm').disabled", timeout=1500)
 
             # Direct bookmarks into Master Control don't arm on page load.
             start = len(requests)
@@ -228,7 +279,7 @@ def main():
             if args.refresh_previews:
                 for name in ('joystick-preview.png', 'master-control-preview.png'):
                     (REPO / 'docs' / name).write_bytes((output / name).read_bytes())
-            print("Browser checks passed: full controller regression and Master Control's two-control layout, touch-to-arm, release-disarm, canceled ARM, zero speed, view-change stop, bookmark startup and E-stop lockout; no JS errors")
+            print("Browser checks passed: STOP/re-arm recovery, stale-status and view-change races, disabled-button reasons, full controller and Master Control regressions; no JS errors")
     finally:
         server.shutdown(); server.server_close()
 

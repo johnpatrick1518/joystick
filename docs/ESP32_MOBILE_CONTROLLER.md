@@ -143,7 +143,8 @@ The slider supports **0–100%** here and scales both speed and turn rate.
 - Releasing before ARM completes never sends motion, even if the reply arrives late.
 - Loading the view or moving the speed slider does not arm the controller.
 - Switching into/out of Master Control stops/disarms and waits for a STOP
-  acknowledgement. If it cannot confirm stopping, reconnect and reload.
+  acknowledgement. If it is lost, fresh disarmed status can confirm stopping.
+  Otherwise return to the full UI and press STOP to retry, or reconnect.
 - Hardware/connection/E-stop gates and the firmware watchdog remain active.
   A disabled/red joystick indicates an unavailable controller. Status messages
   remain available to assistive technology; use browser Back to view diagnostics.
@@ -196,7 +197,13 @@ before loaded use. The joystick does not avoid obstacles or detect cliffs.
 | 64 | PWM initialization failure |
 | 128 | MCP23017 I²C/latch failure; fix connection and restart |
 
-If Arm is disabled, read mode, E-stop, ready state and faults. If another session
+STOP waits for an acknowledgement, clears the local lease/cached armed state,
+and refreshes status. Late pre-STOP status replies cannot lock Arm again. If
+the reply fails, a fresh disarmed status can restore view readiness; otherwise
+press STOP again to retry. E-stop and hardware readiness must still be valid.
+The full UI explains the blocking reason directly below the Arm button.
+
+If Arm is disabled, read that explanation, mode, E-stop, ready state and faults. If another session
 is still armed after a reload, use STOP or wait for watchdog expiry. Inspect
 driver power, jumpers, grounds and motor/encoder signs if movement fails.
 

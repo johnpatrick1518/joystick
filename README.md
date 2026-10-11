@@ -37,6 +37,12 @@ from its own Wi-Fi access point—no phone app, router or internet connection ne
 
 The password is a published default; change it in `config.h` before regular use.
 
+**After STOP:** the UI waits for acknowledgement and clears its cached armed
+state, so you can arm again. It ignores pre-STOP status replies that arrive late.
+If an acknowledgement is lost, a fresh disarmed status can confirm stopping.
+When Arm remains disabled, the reason is shown below it: connection, E-stop,
+hardware readiness, unconfirmed stopping, or another active session.
+
 ## Master Control: speed and joystick only
 
 Select **Master Control →** in the regular interface, or open
