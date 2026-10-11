@@ -1,4 +1,5 @@
 #include "../firmware/kenny_mobile/control.h"
+#include "../firmware/kenny_motor_test/test_commands.h"
 #include <cassert>
 #include <iostream>
 #include <limits>
@@ -67,6 +68,50 @@ int main() {
   wrap.tick(310, false); assert(!wrap.armed);
 
   float left, right;
+  // The phone controller must reproduce the physically verified all-motor tests.
+  struct VerifiedMove { const char* name; float linear, angular; };
+  for (const auto& move : {VerifiedMove{"ALL+", MAX_LINEAR, 0},
+                           VerifiedMove{"ALL-", -MAX_LINEAR, 0},
+                           VerifiedMove{"LEFT", 0, MAX_ANGULAR},
+                           VerifiedMove{"RIGHT", 0, -MAX_ANGULAR},
+                           VerifiedMove{"STOP", 0, 0}}) {
+    int expected[4];
+    float targets[4];
+    assert(testDirections(move.name, expected));
+    openLoopMotorCommands(move.linear, move.angular, targets);
+    for (int i = 0; i < 4; ++i) {
+      int sign = targets[i] > 0 ? 1 : targets[i] < 0 ? -1 : 0;
+      assert(sign == expected[i]);
+      assert(openLoopDuty(targets[i]) == (expected[i] ? 255 : 0));
+    }
+  }
+  // At equal slider settings, forward and spin must deliver equal motor power.
+  openLoopWheelCommands(MAX_LINEAR * 0.25f, 0, left, right);
+  assert(left > 0 && right > 0 && left == right);
+  int forwardDuty = openLoopDuty(left);
+  openLoopWheelCommands(0, MAX_ANGULAR * 0.25f, left, right);
+  assert(left < 0 && right > 0);
+  assert(openLoopDuty(left) == forwardDuty && openLoopDuty(right) == forwardDuty);
+  openLoopWheelCommands(0, -MAX_ANGULAR * 0.25f, left, right);
+  assert(left > 0 && right < 0);
+  assert(openLoopDuty(left) == forwardDuty && openLoopDuty(right) == forwardDuty);
+  openLoopWheelCommands(-MAX_LINEAR, 0, left, right);
+  assert(left < 0 && right < 0 && openLoopDuty(left) == 255 && openLoopDuty(right) == 255);
+  openLoopWheelCommands(0, 0, left, right);
+  assert(left == 0 && right == 0);
+  // Regression: the working breadboard sketch supplies 25% PWM at 25% forward.
+  wheelSpeeds(MAX_LINEAR * 0.25f, 0, left, right, MAX_LINEAR);
+  assert(openLoopDuty(left) == 63 && openLoopDuty(right) == 63);
+  assert(openLoopDuty(MAX_LINEAR * 0.5f) == 127);
+  assert(openLoopDuty(MAX_LINEAR) == 255);
+  assert(openLoopDuty(-MAX_LINEAR) == 255);
+  assert(openLoopDuty(0) == 0);
+  assert(openLoopDuty(MAX_LINEAR * 2) == 255);
+  assert(openLoopDuty(MAX_LINEAR, 90) == 90);
+  wheelSpeeds(MAX_LINEAR, MAX_ANGULAR, left, right, MAX_LINEAR);
+  assert(std::fabs(right - MAX_LINEAR) < 1e-6f);
+  assert(std::fabs(left / right - (MAX_LINEAR - MAX_ANGULAR * TRACK / 2) /
+                                (MAX_LINEAR + MAX_ANGULAR * TRACK / 2)) < 1e-6f);
   wheelSpeeds(0.05f, 0, left, right); assert(left == right && left > 0);
   wheelSpeeds(0, 0.5f, left, right); assert(left < 0 && right > 0);
   wheelSpeeds(0, -0.5f, left, right); assert(left > 0 && right < 0);
@@ -77,6 +122,14 @@ int main() {
     float w = (int(random()%1201) - 600) / 1000.0f;
     wheelSpeeds(v, w, left, right);
     assert(std::fabs(left) <= MAX_WHEEL + 1e-6f && std::fabs(right) <= MAX_WHEEL + 1e-6f);
+    wheelSpeeds(v, w, left, right, MAX_LINEAR);
+    assert(std::fabs(left) <= MAX_LINEAR + 1e-6f && std::fabs(right) <= MAX_LINEAR + 1e-6f);
+    assert(openLoopDuty(left) >= 0 && openLoopDuty(left) <= 255);
+    assert(openLoopDuty(right) >= 0 && openLoopDuty(right) <= 255);
+    openLoopWheelCommands(v, w, left, right);
+    assert(std::fabs(left) <= MAX_LINEAR + 1e-6f && std::fabs(right) <= MAX_LINEAR + 1e-6f);
+    assert(openLoopDuty(left) >= 0 && openLoopDuty(left) <= 255);
+    assert(openLoopDuty(right) >= 0 && openLoopDuty(right) <= 255);
   }
   std::cout << "Mobile control checks passed: ownership, bounds/NaN, release, stop, E-stop, stale queue, replay, counter wraps and 10000 wheel-limit cases\n";
 }

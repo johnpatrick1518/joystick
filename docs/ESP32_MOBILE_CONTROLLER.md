@@ -36,24 +36,36 @@ After wiring an E-stop contact and encoders, add these settings **before their
 ```
 
 Each setting is independent. Carrier mode defaults to both enabled. With encoders
-disabled, PWM uses the existing target ramp and nominal-RPM feedforward without
-PI feedback or encoder faults. RPM/counts are shown as unavailable, not simulated;
+disabled, PWM uses the existing target ramp and maps straight travel directly to
+the slider percentage, without PI feedback or encoder faults. At full forward
+joystick travel, 25% gives about 63/255 PWM and 100% gives 255/255.
+This matches the working KennyBreadboardControl sketch’s percentage scale;
+PWM is 10 kHz and direction changes wait 500 ms before power is applied.
+Combined forward/turn commands are rescaled together to preserve curvature.
+Pure left turns command both left motors in reverse and both right motors forward;
+pure right turns do the opposite. Pure turns use the same PWM percentage as
+straight travel at the same slider setting, rather than reducing it by track width.
+RPM/counts are shown as unavailable, not simulated;
 the speed slider is a command scale, not a measured speed guarantee.
 
 ### Direct-GPIO mode: classic 38-pin ESP32-WROOM
 
 Numbers below are printed **GPIO labels**, not physical header positions.
+This direct-wiring table matches the confirmed motor connections: L298N #1
+drives the left side (#1 A rear, #1 B front), and #2 drives the right side.
 
 | Motor | External driver | Red / white | Direction terminals → GPIO | Enable → GPIO | Yellow A / green B → GPIO |
 | --- | --- | --- | --- | --- | --- |
-| Left-front | L298N #1 A | OUT1 / OUT2 | IN1 → 16, IN2 → 17 | ENA → 25 | 34 / 27 |
-| Right-front | L298N #1 B | OUT3 / OUT4 | IN3 → 18, IN4 → 19 | ENB → 26 | 35 / 14 |
-| Left-rear | L298N #2 A | OUT1 / OUT2 | IN1 → 21, IN2 → 22 | ENA → 32 | 36 (VP) / 13 |
+| Left-front | L298N #1 B | OUT3 / OUT4 | IN3 → 18, IN4 → 19 | ENB → 26 | 34 / 27 |
+| Right-front | L298N #2 A | OUT1 / OUT2 | IN1 → 21, IN2 → 22 | ENA → 32 | 35 / 14 |
+| Left-rear | L298N #1 A | OUT1 / OUT2 | IN1 → 16, IN2 → 17 | ENA → 25 | 36 (VP) / 13 |
 | Right-rear | L298N #2 B | OUT3 / OUT4 | IN3 → 4, IN4 → 5 | ENB → 33 | 39 (VN) / 23 |
 
 All encoder **blue → stable 3.3 V**, **black → common GND**, as permitted by the
 [identified supplier](https://precisionminidrives.com/product/37mm-gear-motor-with-encoder-41mm-type-model-nfp-jgb37-520-en).
 GPIO34/35/36/39 have no internal pull-ups; this encoder has output pull-up circuitry.
+Encoder pins above are the intended connections by physical wheel; verify them
+before enabling encoder feedback. The default encoder-free setup does not read them.
 
 - Remove all ENA/ENB jumpers; use **10 kΩ enable-to-GND pull-downs**.
 - Preserve GPIO5's default boot HIGH level with the documented **10 kΩ pull-up
@@ -139,7 +151,7 @@ With all wheels raised for the first test: **Arm**, then hold and drag:
 - Release centers the joystick and sends exact zero requests. The session stays
   ready for another touch while fresh neutral heartbeats continue.
 - **STOP & DISARM** ends the control session.
-- Speed limit defaults to **50%**, scaling both speed and turn rate.
+- Speed limit defaults to **100%**, scaling both speed and turn rate.
 - Leaving/hiding the page, interrupted touch capture, failed/rejected commands
   disarm the UI. Re-arm deliberately to continue.
 - Only one active control lease is accepted. Another browser cannot take over
@@ -175,9 +187,11 @@ alternative motor-command path.
 
 ## Control limits and behavior
 
-- Requested speed **±0.10 m/s**, turn **±0.60 rad/s**; individual wheel speeds
-  rescaled together to **±0.15 m/s** while preserving curvature.
-- PWM: **20 kHz**, 8-bit, commissioning cap **90/255**.
+- Requested speed **±0.10 m/s**, turn **±0.60 rad/s**; individual wheel commands
+  rescaled together to **±0.10** without encoders or **±0.15 m/s** with encoder
+  feedback, while preserving curvature. Without encoders these are PWM scales.
+- PWM: 8-bit. Without encoders: **10 kHz**, up to **255/255**, controlled by
+  the slider (default 100%). With encoders: **20 kHz**, commissioning cap **90/255**.
 - Motor updates at approximately **100 Hz**; encoder-feedback speed loops when enabled.
 - Browser commands about every **60 ms**, normally one outstanding drive request.
   In the full interface, release sends a priority zero even if an earlier request
@@ -193,9 +207,11 @@ Default **1320 x4 counts/revolution** comes from 11 PPR × 30:1 × 4. Confirm it
 hand rotation. Forward rotation must increase the count; correct each motor's
 `encoderSign` if necessary. The page shows all four counts, RPM and actual PWM.
 
-KP=1.5, KI=0.5, nominal 333 RPM feedforward and 40 RPM/s target ramp are **untuned
-starting values**. Direction reversal inserts at least 50 ms with enable LOW
-and waits for opposing measured rotation to slow. Missing/wrong-direction
+KP=1.5, KI=0.5 and nominal 333 RPM feedforward apply only with encoders.
+The 40 RPM/s target ramp applies in both modes. These are **untuned starting values**.
+Direction changes insert at least **500 ms** with enable LOW without encoders,
+or **50 ms** with encoder feedback and a wait for opposing measured rotation to slow.
+Missing/wrong-direction
 encoder feedback can latch an encoder fault; it is not current protection.
 
 Zero PWM can **coast**, not actively brake. Verify wiring, polarity, encoder

@@ -35,6 +35,9 @@ constexpr uint32_t ENCODER_CPR = 1320;  // Expected x4 count; replace with measu
 constexpr float WHEEL_RADIUS = 0.040f;
 constexpr float NOMINAL_RPM = 333.0f;
 constexpr int MAX_PWM = 90;
+constexpr int OPEN_LOOP_MAX_PWM = 255;  // Matches the working breadboard sketch.
+constexpr uint32_t PWM_FREQUENCY = KENNY_ENCODERS_ENABLED ? 20000 : 10000;
+constexpr uint32_t DIRECTION_COAST_MS = KENNY_ENCODERS_ENABLED ? 50 : 500;
 constexpr float KP = 1.5f, KI = 0.5f;  // Commissioning gains; tune on raised wheels.
 constexpr float RPM_SLEW_PER_SECOND = 40.0f;
 constexpr uint32_t ENCODER_TIMEOUT_MS = 500;

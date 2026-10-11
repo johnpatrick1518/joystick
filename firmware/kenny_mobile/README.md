@@ -9,10 +9,22 @@ Select the actual wiring in config.h before upload:
   E-stop and encoder inputs disabled, so GPIO15 can remain unconnected.
 - **KENNY_CARRIER_MCP23017**: new carrier PCB; expander directions, E-stop GPIO18.
 
+Direct mode matches the confirmed motor wiring: L298N #1 OUT1/2 = left-rear,
+OUT3/4 = left-front; #2 OUT1/2 = right-front, OUT3/4 = right-rear.
+Keep the driver-to-ESP32 control wires as documented in the full guide.
+The controller matches the verified ALL+/ALL-/LEFT/RIGHT motor-test directions.
+In the default encoder-free mode, at 100% speed and full forward, reverse or
+sideways joystick travel, all four wheels receive 255/255 PWM after the direction
+pause and ramp. Release stops; Master Control also disarms.
+
 For wired hardware, set `KENNY_ESTOP_ENABLED` and/or `KENNY_ENCODERS_ENABLED`
 to `1` before their `#ifndef` defaults in config.h. Carrier mode enables both
 by default. Without encoders the controller uses open-loop PWM, not measured
-speed feedback. A breadboard alone lets you test the joystick/GPIO outputs;
+speed feedback. The slider starts at 100%; full straight joystick travel at 25%
+produces about 63/255 PWM, matching KennyBreadboardControl's percentage scale.
+Open-loop PWM is 10 kHz, with a 500 ms coast before applying a new direction.
+Encoder-feedback operation retains the 90/255 commissioning cap and 20 kHz PWM.
+A breadboard alone lets you test the joystick/GPIO outputs;
 motors require powered drivers and the documented wiring.
 
 Phone Wi-Fi: **KENNY-Robot**, password **KennyDrive!2026**, page

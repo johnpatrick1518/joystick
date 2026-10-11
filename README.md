@@ -13,6 +13,10 @@ from its own Wi-Fi access point—no phone app, router or internet connection ne
 - Command watchdog, explicit arming, session ownership and E-stop input.
 - Independent motor control with direct GPIO or the Kenny MCP23017 carrier.
 
+Direct GPIO uses the confirmed wheel arrangement: L298N #1 OUT1/2 drives
+left-rear and OUT3/4 left-front; #2 OUT1/2 drives right-front and OUT3/4 right-rear.
+The carrier mode has its separate terminal mapping in the carrier guide.
+
 ## Quick start
 
 1. Open **`firmware/kenny_mobile/kenny_mobile.ino`** in Arduino IDE; keep its
@@ -90,7 +94,11 @@ when it is wired; GPIO15's enabled E-stop contact must close to GND to arm.
 - [Full setup, direct wiring, calibration and troubleshooting](docs/ESP32_MOBILE_CONTROLLER.md)
 - [Carrier terminal blocks and MCP23017 mapping](docs/CARRIER_WIRING.md)
 
-Defaults: **±0.10 m/s**, **±0.60 rad/s**, PWM **90/255**, **300 ms watchdog**.
+Defaults: command range **±0.10 m/s**, **±0.60 rad/s**, **100% slider**, **300 ms watchdog**.
+Without encoders, full straight joystick travel maps the slider percentage directly
+to PWM (25% ≈ 63/255), with 10 kHz PWM and a 500 ms direction coast.
+With encoder feedback enabled, the commissioning PWM cap remains **90/255**.
+Open-loop command values do not guarantee physical speed.
 The expected encoder default is **1320 x4 counts/wheel revolution**; verify it
 physically. Gains are commissioning starting values, not tuned measurements.
 

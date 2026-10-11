@@ -39,11 +39,37 @@ inline bool newer(uint32_t value, uint32_t previous) {
   uint32_t delta = value - previous;
   return delta && delta < 0x80000000UL;
 }
-inline void wheelSpeeds(float linear, float angular, float& left, float& right) {
+inline void wheelSpeeds(float linear, float angular, float& left, float& right,
+                        float limit = MAX_WHEEL) {
   left = linear - angular * TRACK / 2;
   right = linear + angular * TRACK / 2;
   float peak = std::fmax(std::fabs(left), std::fabs(right));
-  if (peak > MAX_WHEEL) { left *= MAX_WHEEL / peak; right *= MAX_WHEEL / peak; }
+  if (peak > limit) { left *= limit / peak; right *= limit / peak; }
+}
+
+inline void openLoopWheelCommands(float linear, float angular, float& left, float& right) {
+  // Give pure turns the same PWM power as straight travel at the same slider
+  // setting. Physical track width applies only to velocity feedback control.
+  float forward = linear / MAX_LINEAR;
+  float turn = angular / MAX_ANGULAR;
+  left = forward - turn;
+  right = forward + turn;
+  float scale = std::fmax(1.0f, std::fmax(std::fabs(left), std::fabs(right)));
+  left *= MAX_LINEAR / scale;
+  right *= MAX_LINEAR / scale;
+}
+
+inline void openLoopMotorCommands(float linear, float angular, float (&targets)[4]) {
+  float left, right;
+  openLoopWheelCommands(linear, angular, left, right);
+  targets[0] = targets[2] = left;   // Left-front, left-rear.
+  targets[1] = targets[3] = right;  // Right-front, right-rear.
+}
+
+// Without feedback, commands are a PWM scale, not a measured velocity.
+// Full straight travel maps to full configured duty, independently of motor RPM.
+inline int openLoopDuty(float wheelCommand, int maximum = 255) {
+  return static_cast<int>(std::fmin(std::fabs(wheelCommand) / MAX_LINEAR, 1.0f) * maximum);
 }
 
 // Only the motor task owns this state. HTTP handlers exchange bounded messages.

@@ -29,8 +29,11 @@ Motor motors[MOTOR_COUNT] = {
   {25, 0, 1, 34, 27, +1}, {26, 2, 3, 35, 14, +1},
   {32, 4, 5, 36, 13, +1}, {33, 6, 7, 39, 23, +1}
 #else
-  {25, 16, 17, 34, 27, +1}, {26, 18, 19, 35, 14, +1},
-  {32, 21, 22, 36, 13, +1}, {33, 4, 5, 39, 23, +1}
+  // Confirmed physical wheels: #1 A=LR, #1 B=LF, #2 A=RF, #2 B=RR.
+  // Keep the logical LF, RF, LR, RR order for side control and telemetry.
+  // Encoder inputs remain assigned by physical wheel (disabled by default).
+  {26, 18, 19, 34, 27, +1}, {32, 21, 22, 35, 14, +1},
+  {25, 16, 17, 36, 13, +1}, {33, 4, 5, 39, 23, +1}
 #endif
 };
 DRAM_ATTR int8_t quadrature[16] = {0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
@@ -154,8 +157,15 @@ void updateMotors(float dt, uint32_t now) {
   portENTER_CRITICAL(&encoderMux);
   for (unsigned i = 0; i < MOTOR_COUNT; ++i) counts[i] = motors[i].count;
   portEXIT_CRITICAL(&encoderMux);
-  float left, right;
-  mobile::wheelSpeeds(control.linear, control.angular, left, right);
+  float targets[MOTOR_COUNT];
+  if (KENNY_ENCODERS_ENABLED) {
+    float left, right;
+    mobile::wheelSpeeds(control.linear, control.angular, left, right);
+    targets[0] = targets[2] = left;
+    targets[1] = targets[3] = right;
+  } else {
+    mobile::openLoopMotorCommands(control.linear, control.angular, targets);
+  }
   const float conversion = 60 / (2 * PI * WHEEL_RADIUS);
   for (unsigned i = 0; i < MOTOR_COUNT; ++i) {
     Motor& motor = motors[i];
@@ -163,7 +173,7 @@ void updateMotors(float dt, uint32_t now) {
     motor.previousCount = counts[i];
     float measured = ENCODER_CPR ? delta * 60.0f / (ENCODER_CPR * dt) : 0;
     motor.rpm = 0.7f * motor.rpm + 0.3f * measured;
-    float requested = (i % 2 == 0 ? left : right) * conversion;
+    float requested = targets[i] * conversion;
     if (!control.armed || fabsf(requested) < 0.01f) {
       if (!outputZero(motor)) { directionFailure(); return; }
       continue;
@@ -172,11 +182,11 @@ void updateMotors(float dt, uint32_t now) {
     if (motor.direction != direction) {
       if (!outputZero(motor)) { directionFailure(); return; }
       motor.direction = direction; motor.directionSince = now;
-      // Keep enable low for at least 50 ms before powering a new direction.
+      // Encoder-free operation uses the working breadboard sketch's 500 ms coast.
       if (!setDirection(motor, direction)) { directionFailure(); return; }
       continue;
     }
-    if (static_cast<uint32_t>(now - motor.directionSince) < 50) continue;
+    if (static_cast<uint32_t>(now - motor.directionSince) < DIRECTION_COAST_MS) continue;
     if (KENNY_ENCODERS_ENABLED && motor.rpm * direction < -5) {
       ledcWrite(motor.pwm, 0); motor.duty = 0;
       if (static_cast<uint32_t>(now - motor.directionSince) > 500) {
@@ -187,9 +197,8 @@ void updateMotors(float dt, uint32_t now) {
     motor.rampRpm += constrain(requested - motor.rampRpm, -RPM_SLEW_PER_SECOND * dt, RPM_SLEW_PER_SECOND * dt);
     float desired = fabsf(motor.rampRpm);
     if (!KENNY_ENCODERS_ENABLED) {
-      // Open-loop breadboard operation: no invented encoder feedback or PI windup.
-      motor.duty = static_cast<int>(constrain(desired * 255 / NOMINAL_RPM,
-                                             0.0f, static_cast<float>(MAX_PWM)));
+      // Normalize the ramped command to PWM, rather than a nominal motor RPM.
+      motor.duty = mobile::openLoopDuty(motor.rampRpm / conversion, OPEN_LOOP_MAX_PWM);
       ledcWrite(motor.pwm, motor.duty);
       continue;
     }
@@ -335,7 +344,7 @@ void setup() {
     pinMode(motor.in1, OUTPUT); pinMode(motor.in2, OUTPUT);
     setDirection(motor, 0);
 #endif
-    hardwareReady = ledcAttach(motor.pwm, 20000, 8) && hardwareReady;
+    hardwareReady = ledcAttach(motor.pwm, PWM_FREQUENCY, 8) && hardwareReady;
     ledcWrite(motor.pwm, 0);
 #if KENNY_ENCODERS_ENABLED
     pinMode(motor.encA, INPUT); pinMode(motor.encB, INPUT);
@@ -378,6 +387,12 @@ void setup() {
   Serial.printf("E-stop input: %s | Encoder feedback: %s\n",
                 KENNY_ESTOP_ENABLED ? "enabled" : "disabled",
                 KENNY_ENCODERS_ENABLED ? "enabled" : "disabled (open-loop)");
+  Serial.printf("PWM: %lu Hz | Maximum duty: %d/255 | Wheel order: LF RF LR RR\n",
+                static_cast<unsigned long>(PWM_FREQUENCY),
+                KENNY_ENCODERS_ENABLED ? MAX_PWM : OPEN_LOOP_MAX_PWM);
+#if KENNY_WIRING == KENNY_DIRECT_GPIO
+  Serial.println("Motor wiring: #1 OUT1/2=LR, OUT3/4=LF; #2 OUT1/2=RF, OUT3/4=RR");
+#endif
 }
 
 void loop() {

@@ -39,9 +39,9 @@ static const char KENNY_WEB_UI[] PROGMEM = R"KENNYHTML(<!doctype html>
     <button class="arm" id="arm" aria-describedby="armReason" disabled>Arm controller</button>
 <p id="armReason" class="sub" aria-live="polite">Waiting for ESP32 status.</p>
 <button class="stop" id="stop">■ STOP &amp; DISARM</button>
-<label class="limit" for="limit"><span>Speed limit</span><strong id="limitValue">50%</strong></label>
-<input id="limit" type="range" min="10" max="100" step="5" value="50">
-<p class="sub">Maximum: 0.10 m/s · 0.60 rad/s. The slider limits both.</p>
+<label class="limit" for="limit"><span>Speed limit</span><strong id="limitValue">100%</strong></label>
+<input id="limit" type="range" min="10" max="100" step="5" value="100">
+<p class="sub">Without encoder feedback, the slider controls PWM power; displayed speeds are command values, not measured speeds.</p>
 <p id="message" role="status" aria-live="polite">Waiting for the ESP32. Motors start disabled.</p>
 </section>
 <div class="details">
