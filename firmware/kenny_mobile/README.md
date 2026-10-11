@@ -13,6 +13,10 @@ Phone Wi-Fi: **KENNY-Robot**, password **KennyDrive!2026**, page
 **http://192.168.4.1/**. Arm, hold/drag, release to zero; STOP disarms. Motors
 start disabled. No internet/app/additional Arduino libraries are needed.
 
+Select **Master Control →** or open **http://192.168.4.1/#master** for a view with
+only the speed slider and joystick. Touch-and-hold requests arming; release stops
+and disarms. Browser Back returns to diagnostics. Opening the view does not arm.
+
 Full guide: [`docs/ESP32_MOBILE_CONTROLLER.md`](../../docs/ESP32_MOBILE_CONTROLLER.md).
 Edit `web/index.html`, then regenerate web_ui.h with `scripts/build_mobile_ui.py`.
 Test on raised wheels and resolve driver sizing for the 2.4 A-stall motors

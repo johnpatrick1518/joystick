@@ -129,6 +129,29 @@ The default password is published in source. Change it in `config.h` before
 regular use. This is a local WPA-protected AP with plain HTTP, not an
 internet-facing or certified robot-control service.
 
+## Dedicated Master Control
+
+Select **Master Control →** in the full interface or bookmark
+**http://192.168.4.1/#master**. The minimal view contains only the speed slider
+and joystick: no dashboard, connection instructions, telemetry, Arm or STOP buttons.
+The slider supports **0–100%** here and scales both speed and turn rate.
+
+- **Touch and hold:** requests a new control lease, then drives only after the
+  ARM acknowledgement and only while that same gesture is still held.
+- **Release:** sends STOP and disarms. The next deliberate gesture obtains a new
+  lease; it may need to wait briefly for fresh status confirming readiness.
+- Releasing before ARM completes never sends motion, even if the reply arrives late.
+- Loading the view or moving the speed slider does not arm the controller.
+- Switching into/out of Master Control stops/disarms and waits for a STOP
+  acknowledgement. If it cannot confirm stopping, reconnect and reload.
+- Hardware/connection/E-stop gates and the firmware watchdog remain active.
+  A disabled/red joystick indicates an unavailable controller. Status messages
+  remain available to assistive technology; use browser Back to view diagnostics.
+
+The full interface retains its explicit Arm and STOP controls and neutral-session
+behavior described above. The minimal interface is an alternative view, not an
+alternative motor-command path.
+
 ## Control limits and behavior
 
 - Requested speed **±0.10 m/s**, turn **±0.60 rad/s**; individual wheel speeds
@@ -136,7 +159,8 @@ internet-facing or certified robot-control service.
 - PWM: **20 kHz**, 8-bit, commissioning cap **90/255**.
 - Four encoder-feedback speed loops at approximately **100 Hz**.
 - Browser commands about every **60 ms**, normally one outstanding drive request.
-  Release sends a priority zero even if an earlier request is still pending.
+  In the full interface, release sends a priority zero even if an earlier request
+  is still pending. Master Control release sends STOP and disarms instead.
 - **300 ms** without a fresh accepted command → zero targets and disarm.
 - Replays/out-of-order sequences do not refresh the watchdog. Each deliberate
   ARM creates a random lease; old packets cannot re-arm/drive a new session.
@@ -187,7 +211,9 @@ Both modes compile with Espressif core 3.3.12. Host checks cover ownership,
 numeric bounds/NaNs, stale queue, replay, counter wrap, watchdog/release/E-stop
 and 10,000 wheel-limit cases. Chromium exercises the actual page at phone size:
 touch drag, forward/reverse/turn, release during a pending request, STOP, blur,
-command rejection and E-stop lockout. **Browser telemetry is simulated**; radio,
+command rejection and E-stop lockout. Master Control checks also verify exactly
+two visible controls, gesture-only arming, release/canceled-ARM handling, zero
+speed and view-change stopping. **Browser telemetry is simulated**; radio,
 physical timing and motor behavior remain untested until an ESP32 is connected.
 
 ```bash
@@ -196,6 +222,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
 /tmp/kenny-mobile-control-test
 # Requires Playwright and its Chromium browser in a test venv:
 python tests/check_mobile_browser.py
+# Explicitly refresh documentation screenshots after the checks pass:
+python tests/check_mobile_browser.py --refresh-previews
 ```
 
 Edit `firmware/kenny_mobile/web/index.html`, then run

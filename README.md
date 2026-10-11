@@ -7,6 +7,7 @@ from its own Wi-Fi access point—no phone app, router or internet connection ne
 ## Features
 
 - Touch joystick: forward/reverse, turning and in-place rotation.
+- Dedicated **Master Control** view showing only a speed slider and joystick.
 - Speed-limit slider and STOP/disarm button.
 - Four-wheel encoder counts, measured RPM and PWM telemetry.
 - Command watchdog, explicit arming, session ownership and E-stop input.
@@ -35,6 +36,26 @@ from its own Wi-Fi access point—no phone app, router or internet connection ne
    press **Arm**, and hold/drag the joystick. Release sends zero; STOP disarms.
 
 The password is a published default; change it in `config.h` before regular use.
+
+## Master Control: speed and joystick only
+
+Select **Master Control →** in the regular interface, or open
+**http://192.168.4.1/#master** directly. This view shows only:
+
+- The **0–100% speed slider**.
+- The **joystick**.
+
+Touch and hold the joystick to request arming and drive; releasing stops and
+disarms. It does not arm on page load or while adjusting the speed slider.
+Switching views also stops/disarms and waits for confirmation before accepting
+another gesture. Use your browser's Back button to return to diagnostics.
+Hardware readiness, connection, E-stop, session ownership and watchdog gates
+remain active. A disabled/red joystick indicates an unavailable controller;
+return to diagnostics to inspect the reason.
+
+Preview below uses simulated telemetry:
+
+![Minimal Master Control view](docs/master-control-preview.png)
 
 ## Wiring and setup
 
@@ -88,5 +109,7 @@ Edit **`firmware/kenny_mobile/web/index.html`**, then regenerate `web_ui.h` with
 Both wiring modes compile. Control checks cover ownership, numeric bounds,
 stale/replayed commands, watchdog/counter wrap and 10,000 wheel-limit cases.
 Chromium checks cover phone layout, touch drag, release during a pending request,
-STOP, blur, rejected commands and E-stop lockout. Physical radio/motor tests
+STOP, blur, rejected commands and E-stop lockout, plus Master Control's two-control
+layout, touch-to-arm/release-to-disarm, canceled ARM responses, zero speed and
+view-change stopping. Physical radio/motor tests
 remain pending until the ESP32 is connected and flashed.

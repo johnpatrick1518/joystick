@@ -4,6 +4,7 @@ Requires playwright and its Chromium browser. No ESP32 or motor is actuated.
 Writes a mock-telemetry preview to artifacts/mobile/joystick-preview.png.
 """
 from functools import partial
+import argparse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -21,6 +22,9 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--refresh-previews', action='store_true', help='Update docs screenshots after successful checks')
+    args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(REPO / "firmware/kenny_mobile/web")))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -32,9 +36,11 @@ def main():
     active_lease = 0
     hold_next_drive = False
     held_route = None
+    hold_next_arm = False
+    held_arm = None
 
     def api(route):
-        nonlocal active_lease, hold_next_drive, held_route
+        nonlocal active_lease, hold_next_drive, held_route, hold_next_arm, held_arm
         path = route.request.url.split("/api/")[-1]
         body = parse_qs(route.request.post_data or "")
         requests.append((path, body))
@@ -48,6 +54,10 @@ def main():
                 state["armed"] = True
                 active_lease += 1
                 result = {"ok": True, "lease": active_lease}
+                if hold_next_arm:
+                    hold_next_arm = False
+                    held_arm = (route, result)
+                    return
         elif path == "drive":
             if reject_drive or not state["armed"] or int(body["lease"][0]) != active_lease:
                 code, result = 409, {"ok": False}
@@ -132,9 +142,93 @@ def main():
             state["estop"] = True; state["faults"] = 2
             page.wait_for_function("document.getElementById('estop').textContent.includes('OPEN')")
             assert page.locator("#arm").is_disabled()
+
+            # Master Control presents exactly the speed control and joystick.
+            state['estop'] = False; state['faults'] = 0
+            page.wait_for_function("document.getElementById('estop').textContent === 'Closed'")
+            start = len(requests)
+            page.locator('#masterLink').click()
+            page.wait_for_function("document.body.classList.contains('master') && document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+            assert page.locator('button:visible').count() == 0
+            assert page.locator('a:visible').count() == 0
+            assert page.locator('input:visible').count() == 1
+            assert page.locator('#limit').is_visible() and page.locator('#pad').is_visible()
+            assert not page.locator('header').is_visible()
+            assert not page.locator('.details').is_visible()
+            assert not page.locator('.outputs').is_visible()
+            assert not page.locator('footer').is_visible()
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            assert not any(path == 'arm' for path, _ in requests[start:])
+            page.locator('#limit').evaluate("el => { el.value='30'; el.dispatchEvent(new Event('input')); }")
+            page.wait_for_timeout(100)
+            assert not any(path == 'arm' for path, _ in requests[start:])
+            page.screenshot(path=str(output / 'master-control-preview.png'), full_page=True)
+            box = page.locator('#pad').bounding_box()
+            cx, cy = box['x'] + box['width']/2, box['y'] + box['height']/2
+            touch.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[{'x':cx,'y':cy,'id':1}]})
+            touch.send('Input.dispatchTouchEvent', {'type':'touchMove','touchPoints':[{'x':cx,'y':cy-90,'id':1}]})
+            page.wait_for_function("document.getElementById('mode').textContent === 'DRIVING'")
+            page.wait_for_timeout(130)
+            assert state['armed'] and 0 < state['v'] <= 0.03
+            touch.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
+            page.wait_for_timeout(130)
+            assert not state['armed'] and state['v'] == 0 and state['w'] == 0
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+
+            # Release BEFORE an ARM response: a late acknowledgement must never drive.
+            start = len(requests)
+            hold_next_arm = True
+            page.mouse.move(cx,cy); page.mouse.down(); page.mouse.move(cx,cy-80)
+            page.wait_for_timeout(80)
+            assert held_arm is not None
+            page.mouse.up(); page.wait_for_timeout(70)
+            assert not state['armed']
+            held_arm[0].fulfill(status=200,content_type='application/json',body=json.dumps(held_arm[1]))
+            page.wait_for_timeout(100)
+            assert not state['armed']
+            assert not any(path == 'drive' for path, _ in requests[start:])
+
+            # A zero-percent speed setting never generates a nonzero request.
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+            page.locator('#limit').evaluate("el => { el.value='0'; el.dispatchEvent(new Event('input')); }")
+            page.mouse.move(cx,cy); page.mouse.down(); page.mouse.move(cx,cy-80)
+            page.wait_for_function("document.getElementById('mode').textContent === 'DRIVING'")
+            page.wait_for_timeout(120)
+            assert state['armed'] and state['v'] == 0 and state['w'] == 0
+            page.mouse.up(); page.wait_for_timeout(100)
+            assert not state['armed']
+
+            # Changing back to diagnostics during a held gesture stops and disarms.
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+            page.locator('#limit').evaluate("el => { el.value='50'; el.dispatchEvent(new Event('input')); }")
+            page.mouse.move(cx,cy); page.mouse.down(); page.mouse.move(cx,cy-80)
+            page.wait_for_function("document.getElementById('mode').textContent === 'DRIVING'")
+            page.wait_for_timeout(100)
+            page.evaluate("location.hash = ''")
+            page.wait_for_function("!document.body.classList.contains('master')")
+            page.wait_for_timeout(120)
+            assert not state['armed'] and state['v'] == 0
+            page.mouse.up()
+            assert page.locator('.details').is_visible()
+
+            # Direct bookmarks into Master Control don't arm on page load.
+            start = len(requests)
+            page.goto(f"http://127.0.0.1:{server.server_port}/#master")
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'false'")
+            assert not any(path == 'arm' for path, _ in requests[start:])
+            state['estop'] = True; state['faults'] = 2
+            page.wait_for_function("document.getElementById('pad').getAttribute('aria-disabled') === 'true'")
+            start = len(requests)
+            box = page.locator('#pad').bounding_box()
+            page.mouse.click(box['x']+box['width']/2, box['y']+box['height']/2)
+            page.wait_for_timeout(100)
+            assert not any(path == 'arm' for path, _ in requests[start:])
             assert not errors, errors
             browser.close()
-            print("Browser checks passed: phone layout, touch drag, neutral startup, forward/reverse/turn, release-zero with an outstanding request, STOP, blur, rejected command, E-stop lockout; no JS errors")
+            if args.refresh_previews:
+                for name in ('joystick-preview.png', 'master-control-preview.png'):
+                    (REPO / 'docs' / name).write_bytes((output / name).read_bytes())
+            print("Browser checks passed: full controller regression and Master Control's two-control layout, touch-to-arm, release-disarm, canceled ARM, zero speed, view-change stop, bookmark startup and E-stop lockout; no JS errors")
     finally:
         server.shutdown(); server.server_close()
 
