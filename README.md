@@ -12,6 +12,8 @@ from its own Wi-Fi access point—no phone app, router or internet connection ne
 - Four-wheel encoder counts, measured RPM and PWM telemetry.
 - Command watchdog, explicit arming, session ownership and E-stop input.
 - Independent motor control with direct GPIO or the Kenny MCP23017 carrier.
+- USB Type-C serial control alongside Wi-Fi; see [USB control](docs/USB_CONTROL.md)
+  for the local browser bridge, protocol, firmware upload and bench-test procedure.
 
 Direct GPIO uses the confirmed wheel arrangement: L298N #1 OUT1/2 drives
 left-rear and OUT3/4 left-front; #2 OUT1/2 drives right-front and OUT3/4 right-rear.

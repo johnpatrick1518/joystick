@@ -9,6 +9,7 @@
 #include <esp_system.h>
 #include "control.h"
 #include "config.h"
+#include "usb_protocol.h"
 #include "web_ui.h"
 
 struct Motor {
@@ -314,7 +315,7 @@ void driveHandler() {
   jsonResponse(accepted ? 200 : 409, accepted ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Disarmed, expired session or invalid command\"}");
 }
 
-void statusHandler() {
+String statusJson() {
   Snapshot s = snapshot();
   char body[650];
   snprintf(body, sizeof(body),
@@ -329,7 +330,52 @@ void statusHandler() {
     static_cast<unsigned long>(mobile::WATCHDOG_MS),
     static_cast<long>(s.counts[0]), static_cast<long>(s.counts[1]), static_cast<long>(s.counts[2]), static_cast<long>(s.counts[3]),
     s.rpm[0],s.rpm[1],s.rpm[2],s.rpm[3],s.pwm[0],s.pwm[1],s.pwm[2],s.pwm[3]);
-  jsonResponse(200, body);
+  return String(body);
+}
+
+void statusHandler() { jsonResponse(200, statusJson()); }
+
+void usbLine(char* line) {
+  mobile::Command command;
+  mobile::UsbKind kind = mobile::parseUsb(line, command);
+  if (kind == mobile::UsbKind::Hello) {
+    Serial.println("{\"ok\":true,\"protocol\":\"KENNY_USB_V1\",\"baud\":115200}");
+    return;
+  }
+  if (kind == mobile::UsbKind::Status) { Serial.println(statusJson()); return; }
+  if (kind == mobile::UsbKind::Invalid) {
+    requestUrgentStop(); mobile::Command stop; dispatch(stop);
+    Serial.println("{\"ok\":false,\"error\":\"Invalid USB command; stopped\"}");
+    return;
+  }
+  if (kind == mobile::UsbKind::Arm) {
+    do { command.lease = esp_random(); } while (!command.lease);
+  }
+  if (kind == mobile::UsbKind::Stop) requestUrgentStop();
+  bool accepted = dispatch(command);
+  if (!accepted) Serial.println("{\"ok\":false,\"error\":\"Disarmed, occupied session, expired sequence or hardware not ready\"}");
+  else if (kind == mobile::UsbKind::Arm)
+    Serial.println("{\"ok\":true,\"lease\":" + String(command.lease) + "}");
+  else Serial.println("{\"ok\":true}");
+}
+
+void usbInput() {
+  static char line[96];
+  static unsigned length = 0;
+  static bool discard = false;
+  for (unsigned budget = 128; budget && Serial.available(); --budget) {
+    char c = Serial.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      if (discard) Serial.println("{\"ok\":false,\"error\":\"USB line too long or invalid; stopped\"}");
+      else if (length) { line[length] = 0; usbLine(line); }
+      length = 0; discard = false;
+    } else if (!discard) {
+      if (c < 32 || c > 126 || length >= sizeof(line) - 1) {
+        requestUrgentStop(); discard = true; length = 0;
+      } else line[length++] = c;
+    }
+  }
 }
 
 void setup() {
@@ -384,6 +430,7 @@ void setup() {
   server.begin();
   Serial.printf("KENNY mobile ready. Wi-Fi: %s | URL: http://%s/ | %s\n",
                  WIFI_SSID, WiFi.softAPIP().toString().c_str(), WIRING_NAME);
+  Serial.println("KENNY_USB_V1 ready at 115200 baud: HELLO STATUS ARM V STOP");
   Serial.printf("E-stop input: %s | Encoder feedback: %s\n",
                 KENNY_ESTOP_ENABLED ? "enabled" : "disabled",
                 KENNY_ENCODERS_ENABLED ? "enabled" : "disabled (open-loop)");
@@ -396,7 +443,8 @@ void setup() {
 }
 
 void loop() {
+  usbInput();
   server.handleClient();
-  // USB serial is monitoring only in this sketch; no competing motion source.
+  // USB and Wi-Fi share the motor task's single lease and watchdog.
   delay(1);
 }

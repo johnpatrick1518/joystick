@@ -105,8 +105,10 @@ and upload initially with motor power disconnected.
 
 WiFi, WebServer and Wire are included in the ESP32 core. The sketch uses the
 Arduino-ESP32 **3.x** LEDC API. Serial Monitor at **115200 baud** shows the mode
-and URL. USB serial is monitoring only; the earlier serial ARM/V protocol is
-not active in this mobile sketch.
+and URL. USB serial also accepts the `KENNY_USB_V1` command interface alongside
+Wi-Fi. See [USB control](USB_CONTROL.md) for the local browser bridge and protocol.
+The earlier standalone controller's ARM/V protocol differs: this sketch requires
+the session lease returned by ARM in each V command.
 
 ### Arduino CLI
 
